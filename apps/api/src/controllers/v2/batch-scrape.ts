@@ -4,7 +4,7 @@ import {
   BatchScrapeRequest,
   batchScrapeRequestSchema,
   batchScrapeRequestSchemaNoURLValidation,
-  url as urlSchema,
+  URL as urlSchema,
   RequestWithAuth,
   ScrapeOptions,
   BatchScrapeResponse,
@@ -14,6 +14,7 @@ import {
   finishCrawlKickoff,
   getCrawl,
   lockURLs,
+  markCrawlActive,
   saveCrawl,
   StoredCrawl,
 } from "../../lib/crawl-redis";
@@ -122,6 +123,7 @@ export async function batchScrapeController(
 
   if (!req.body.appendToId) {
     await saveCrawl(id, sc);
+    await markCrawlActive(id);
   }
 
   let jobPriority = 20;

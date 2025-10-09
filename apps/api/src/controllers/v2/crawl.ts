@@ -7,19 +7,29 @@ import {
   RequestWithAuth,
   toV0CrawlerOptions,
 } from "./types";
-import { crawlToCrawler, saveCrawl, StoredCrawl } from "../../lib/crawl-redis";
+import {
+  crawlToCrawler,
+  saveCrawl,
+  StoredCrawl,
+  markCrawlActive,
+} from "../../lib/crawl-redis";
 import { _addScrapeJobToBullMQ } from "../../services/queue-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../../lib/cost-tracking";
 import { checkPermissions } from "../../lib/permissions";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
+import { modifyCrawlUrl } from "../../utils/url-utils";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
   res: Response<CrawlResponse>,
 ) {
   const preNormalizedBody = req.body;
+
+  // Check for URL modification before parsing
+  const urlModificationInfo = modifyCrawlUrl(preNormalizedBody.url);
+
   req.body = crawlRequestSchema.parse(req.body);
 
   const permissions = checkPermissions(req.body, req.acuc?.flags);
@@ -194,6 +204,8 @@ export async function crawlController(
 
   await saveCrawl(id, sc);
 
+  await markCrawlActive(id);
+
   await _addScrapeJobToBullMQ(
     {
       url: req.body.url,
@@ -219,6 +231,9 @@ export async function crawlController(
     success: true,
     id,
     url: `${protocol}://${req.get("host")}/v2/crawl/${id}`,
+    ...(urlModificationInfo.wasModified && {
+      warning: `The URL you provided included a '/*' suffix, which has been removed to ensure a more targeted and efficient crawl.`,
+    }),
     ...(req.body.prompt && {
       promptGeneratedOptions: promptGeneratedOptions,
       finalCrawlerOptions: finalCrawlerOptions,
